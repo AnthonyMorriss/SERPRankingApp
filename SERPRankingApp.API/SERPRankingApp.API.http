@@ -1,0 +1,6 @@
+@SERPRankingApp.API_HostAddress = http://localhost:5056
+
+GET {{SERPRankingApp.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

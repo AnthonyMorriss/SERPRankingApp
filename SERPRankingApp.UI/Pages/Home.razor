@@ -1,0 +1,146 @@
+﻿@page "/"
+@using System.Text
+@inject HttpClient Client
+
+<h1>Search Engine Scraper</h1>
+
+<div class="d-flex justify-content-center align-items-center flex-column" style="height: 100vh;">
+    <div class="card p-4 mb-4" style="width: 50%;">
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="useHtmlFileSwitch" @bind="useHTMLFile">
+            <label class="form-check-label" for="useHtmlFileSwitch">Use Local HTML File</label>
+        </div>
+        <div class="mb-3">
+            <label for="targetUrl" class="form-label">Target URL</label>
+            <input id="targetUrl" @bind="targetUrl" class="form-control" placeholder="Enter the target URL..." />
+        </div>
+        @if (useHTMLFile)
+        {
+            <div class="mb-3">
+                <label for="filePath" class="form-label">Local HTML File Path</label>
+                <input id="filePath" @bind="filePath" class="form-control" placeholder="Enter the local file path..." />
+            </div>
+        }
+        else
+        {
+            <div class="mb-3">
+                <label for="searchQuery" class="form-label">Search Phrase</label>
+                <input id="searchQuery" @bind="searchQuery" class="form-control" placeholder="Enter your search phrase..." />
+            </div>
+        }
+        <button class="btn btn-primary w-100" @onclick="PerformSearch">Search</button>
+        @if (!string.IsNullOrEmpty(searchResult))
+        {
+            <div class="text-center mt-3">
+                <h5>Search Result:</h5>
+                <p>@searchResult</p>
+            </div>
+        }
+    </div>
+
+    <div class="mt-4 w-100">
+        <h5>Search Results Table</h5>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Search Term</th>
+                    <th>Target URL</th>
+                    <th>Rank Results</th>
+                    <th>Search Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Items)
+                {
+                    <tr>
+                        <td>@item.Id</td>
+                        <td>@item.SearchTerm</td>
+                        <td>@item.TargetUrl</td>
+                        <td>@string.Join(", ", item.RankResults)</td>
+                        <td>@item.SearchDate.ToString("g")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+@code {
+    private string searchQuery = string.Empty;
+    private string targetUrl = string.Empty;
+    private string filePath = string.Empty;
+    private bool useHTMLFile = false;
+    private string searchResult = string.Empty;
+
+    private List<SearchResultResponse> Items = new List<SearchResultResponse>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"api/SearchResult/GetSearchResults");
+
+        HttpResponseMessage response = await Client.SendAsync(request);
+
+        Console.WriteLine(response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+        {
+
+            searchResult = $"Error fetching search results. {response.StatusCode}";
+            return;
+        }
+
+        List<SearchResultResponse> responseContent = JsonConvert.DeserializeObject<List<SearchResultResponse>>(await response.Content.ReadAsStringAsync());
+        Items = responseContent ?? new List<SearchResultResponse>();
+    }
+
+    private async Task PerformSearch()
+    {
+        if (string.IsNullOrWhiteSpace(targetUrl))
+        {
+            searchResult = "Please enter both a search phrase and a target URL.";
+            return;
+        }
+
+        var requestBody = new CreateSearchResultRequest()
+            {
+                SearchTerm = searchQuery,
+                TargetURL = targetUrl,
+                UseHTMLFile = useHTMLFile,
+                HTMLFilePath = useHTMLFile ? filePath : string.Empty,
+            };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"api/SearchResult/CreateSearchResult")
+            {
+                Content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json")
+            };
+
+        try
+        {
+            HttpResponseMessage response = await Client.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine(responseContent);
+                searchResult = $"{responseContent}";
+            }
+            else
+            {
+                string exceptionString = await response.Content.ReadAsStringAsync() ?? "";
+                int atIndex = exceptionString.IndexOf(" at ", StringComparison.OrdinalIgnoreCase);
+                if (atIndex > 0)
+                {
+                    exceptionString = exceptionString.Substring(0, atIndex).Trim();
+                }
+                searchResult = $"Error: {exceptionString}";
+            }
+        }
+        catch (Exception ex)
+        {
+            searchResult = $"Error: {ex.Message}";
+        }
+
+        StateHasChanged();
+    }
+}
